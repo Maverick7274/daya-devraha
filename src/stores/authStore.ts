@@ -39,7 +39,10 @@ interface AuthState {
 		confirmPassword: string,
 		dateOfBirth?: string
 	) => Promise<void>;
-	loginAdmin: (admin_email: string, password: string) => Promise<void>;
+	loginAdmin: (
+		admin_email: string,
+		password: string
+	) => Promise<{ twoFactorRequired: boolean }>;
 	logoutAdmin: () => Promise<void>;
 	checkAdminAuth: () => Promise<void>;
 	checkAdminProfile: () => Promise<void>;
@@ -100,6 +103,7 @@ interface AuthState {
 
 	// Extra keys for verification handling
 	pendingUserEmail: string | null;
+	pendingAdminEmail: string | null;
 	isEmailVerified: boolean;
 }
 
@@ -112,6 +116,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 	isAuthenticatedUser: false,
 	// Extra keys
 	pendingUserEmail: null,
+	pendingAdminEmail: null,
 	isEmailVerified: false,
 	// Global flags
 	error: null,
@@ -160,11 +165,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 				email: admin_email,
 				password,
 			});
-			set({
-				admin: response.data.data,
-				isAuthenticatedAdmin: true,
-				isLoading: false,
-			});
+			if (response.data.data.twoFactorRequired) {
+				set({ pendingAdminEmail: admin_email, isLoading: false });
+				return { twoFactorRequired: true };
+			} else {
+				set({
+					admin: response.data.data,
+					isAuthenticatedAdmin: true,
+					isLoading: false,
+					pendingAdminEmail: null,
+					isEmailVerified: response.data.data.isVerified,
+				});
+				return { twoFactorRequired: false };
+			}
 		} catch (error: unknown) {
 			let errorMessage = 'Error logging in admin';
 			if (error instanceof Error) {
@@ -367,7 +380,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 	verifyAdminOTP: async (otp: string) => {
 		set({ isLoading: true, error: null });
 		try {
-			const email = get().admin?.email;
+			const email = get().admin?.email || get().pendingAdminEmail;
 			if (!email) {
 				throw new Error(
 					'No admin email available for OTP verification.'
@@ -382,6 +395,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 				admin: response.data.data,
 				isAuthenticatedAdmin: true,
 				isLoading: false,
+				pendingAdminEmail: null,
+				isEmailVerified: response.data.data.isVerified,
 			});
 		} catch (error: unknown) {
 			let errorMessage = 'Error verifying admin OTP';

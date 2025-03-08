@@ -23,12 +23,12 @@ interface OTPFormData {
 	otp: string;
 }
 
-export default function AdminVerifyOTPPage() {
+export default function VerifyOTPPage() {
 	const router = useRouter();
 	const params = useParams();
 	const locale = params.locale || 'en';
-	// Use the admin function to verify OTP. (This should call your backend admin OTP verification endpoint.)
-	const { verifyAdminOTP, admin } = useAuthStore();
+	// Destructure verifyUserOTP and pendingAdminEmail from the auth store.
+	const { verifyAdminOTP, pendingAdminEmail } = useAuthStore();
 	const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
 	const {
@@ -39,12 +39,12 @@ export default function AdminVerifyOTPPage() {
 		defaultValues: { otp: '' },
 	});
 
-	// If there is no admin (or admin email), redirect to the admin login page.
+	// If there's no pending user, redirect away (e.g. to the login page)
 	useEffect(() => {
-		if (!admin || !admin.email) {
+		if (!pendingAdminEmail) {
 			router.push(`/${locale}/admin/login`);
 		}
-	}, [admin, router, locale]);
+	}, [pendingAdminEmail, router, locale]);
 
 	const verifyMutation = useMutation({
 		mutationFn: (otpCode: string) => verifyAdminOTP(otpCode),
@@ -55,7 +55,7 @@ export default function AdminVerifyOTPPage() {
 			}, 2000);
 		},
 		onError: () => {
-			// The error message is handled below.
+			// Error message is handled below.
 		},
 	});
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -11,7 +12,6 @@ import { Label } from '@/components/ui/label';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 
-// Define validation schema using Zod.
 const loginSchema = z.object({
 	email: z
 		.string()
@@ -38,7 +38,8 @@ export default function AdminLoginPage() {
 	const locale = params.locale || 'en';
 	const [localError, setLocalError] = useState<string | null>(null);
 
-	const { loginAdmin, isLoading, error, admin } = useAuthStore();
+	const { loginAdmin, logoutAdmin, admin, checkAdminVerificationStatus } =
+		useAuthStore();
 
 	// If already logged in, redirect to admin settings.
 	useEffect(() => {
@@ -46,6 +47,32 @@ export default function AdminLoginPage() {
 			router.push(`/${locale}/admin/settings`);
 		}
 	}, [admin, router, locale]);
+
+	const loginMutation = useMutation({
+		mutationFn: async (data: LoginFormData) => {
+			return await loginAdmin(data.email, data.password);
+		},
+		onSuccess: async (result) => {
+			// Call checkUserVerificationStatus to update isEmailVerified in store.
+			await checkAdminVerificationStatus();
+			// Now check if the Admin is verified
+			if (result.twoFactorRequired) {
+				router.push(`/${locale}/admin/verify-otp`);
+			} else if (!useAuthStore.getState().isEmailVerified) {
+				setLocalError(
+					'Your email address is not verified. Please check your inbox for the verification link.'
+				);
+				await logoutAdmin();
+			} else {
+				router.push(`/${locale}/settings`);
+			}
+		},
+		onError: (error: unknown) => {
+			setLocalError(
+				((error as Error).message as string) || 'Login failed.'
+			);
+		},
+	});
 
 	const {
 		register,
@@ -55,14 +82,9 @@ export default function AdminLoginPage() {
 		resolver: zodResolver(loginSchema),
 	});
 
-	const onSubmit = async (data: LoginFormData) => {
+	const onSubmit = (data: LoginFormData) => {
 		setLocalError(null);
-		try {
-			await loginAdmin(data.email, data.password);
-			// The useEffect above will handle redirection upon login.
-		} catch {
-			// Error is handled in the store.
-		}
+		loginMutation.mutate(data);
 	};
 
 	return (
@@ -125,13 +147,16 @@ export default function AdminLoginPage() {
 					</motion.div>
 					<motion.div variants={fieldVariants}>
 						<Button type="submit" className="w-full">
-							{isLoading ? 'Logging in...' : 'Login'}
+							{loginMutation.isPending
+								? 'Logging in...'
+								: 'Login'}
 						</Button>
 					</motion.div>
-					{(error || localError) && (
+					{(loginMutation.error || localError) && (
 						<p className="text-destructive text-center">
 							{localError ||
-								((error as unknown) as Error)?.message ||
+								(loginMutation.error as unknown as Error)
+									?.message ||
 								'Login failed.'}
 						</p>
 					)}
